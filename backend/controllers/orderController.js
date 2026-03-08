@@ -1,4 +1,11 @@
- const Order = require('../models/Order');
+const Order = require('../models/Order');
+const { 
+  sendAdminOrderEmail, 
+  sendCustomerOrderEmail,
+  sendOrderApprovedEmail,
+  sendOrderDispatchedEmail,
+  sendOrderDeliveredEmail
+} = require('../utils/sendEmail');
 
 // @route   POST /api/orders
 exports.createOrder = async (req, res) => {
@@ -10,7 +17,8 @@ exports.createOrder = async (req, res) => {
       paymentDetails,
       itemsPrice,
       shippingPrice,
-      totalPrice
+      totalPrice,
+      userEmail
     } = req.body;
 
     if (!items || items.length === 0) {
@@ -25,8 +33,19 @@ exports.createOrder = async (req, res) => {
       paymentDetails,
       itemsPrice,
       shippingPrice,
-      totalPrice
+      totalPrice,
+      userEmail: userEmail || req.user.email
     });
+
+    // Send email notifications
+    try {
+      await sendAdminOrderEmail(order);
+      if (order.userEmail) {
+        await sendCustomerOrderEmail(order);
+      }
+    } catch (emailError) {
+      console.log('Email error:', emailError.message);
+    }
 
     res.status(201).json(order);
   } catch (error) {
@@ -57,7 +76,6 @@ exports.getOrderById = async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    // Only allow own orders or admin
     if (order.user._id.toString() !== req.user._id.toString() && !req.user.isAdmin) {
       return res.status(401).json({ message: 'Not authorized' });
     }
@@ -89,19 +107,35 @@ exports.updateOrderStatus = async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    order.status = req.body.status || order.status;
+    const newStatus = req.body.status || order.status;
+    order.status = newStatus;
 
-    if (req.body.status === 'Delivered') {
+    if (newStatus === 'delivered') {
       order.isDelivered = true;
       order.deliveredAt = Date.now();
     }
 
     if (req.body.isPaid) {
       order.isPaid = true;
-      order.paymentDetails.paidAt = Date.now();
     }
 
     const updatedOrder = await order.save();
+
+    // Send email based on new status
+    try {
+      if (updatedOrder.userEmail) {
+        if (newStatus === 'approved') {
+          await sendOrderApprovedEmail(updatedOrder);
+        } else if (newStatus === 'dispatched') {
+          await sendOrderDispatchedEmail(updatedOrder);
+        } else if (newStatus === 'delivered') {
+          await sendOrderDeliveredEmail(updatedOrder);
+        }
+      }
+    } catch (emailError) {
+      console.log('Status email error:', emailError.message);
+    }
+
     res.json(updatedOrder);
   } catch (error) {
     res.status(500).json({ message: error.message });
