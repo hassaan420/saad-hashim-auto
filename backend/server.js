@@ -5,7 +5,6 @@ const dns = require('dns');
 const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
-const xss = require('xss-clean');
 const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
 
@@ -29,12 +28,10 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // --- SANITIZATION ---
-// Note: `express-mongo-sanitize` may attempt to reassign `req.query` which
-// is a getter in newer Express versions. Avoid assigning to `req.query` to
-// prevent runtime errors. We'll keep `xss-clean` and rely on validation +
+// Note: `express-mongo-sanitize` and `xss-clean` may attempt to reassign `req.query` which
+// is a getter in newer Express versions. Avoid assigned to `req.query` to
+// prevent runtime errors. We'll rely on validation +
 // parameterized queries for NoSQL injection protection.
-app.use(xss()); // basic XSS protection for input
-
 // --- RATE LIMITING ---
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
