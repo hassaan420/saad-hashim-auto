@@ -7,6 +7,11 @@ const bannerSchema = new mongoose.Schema({
   buttonLink: { type: String, default: '/products' },
   backgroundColor: { type: String, default: '#d0021b' },
   textColor: { type: String, default: '#ffffff' },
+  position: {
+    type: String,
+    enum: ['hero', 'promo_strip', 'below_categories'],
+    default: 'hero'
+  },
   isActive: { type: Boolean, default: true },
   order: { type: Number, default: 0 },
 }, { timestamps: true });

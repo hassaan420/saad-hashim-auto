@@ -26,8 +26,9 @@ router.get('/', getProducts);
 router.get('/:id', getProductById);
 
 // Admin only routes
-router.post('/', protect, admin, upload.array('images', 5), createProduct);
-router.put('/:id', protect, admin, updateProduct);
+const { productCreateRules, productUpdateRules, validateResult } = require('../middleware/validators');
+router.post('/', protect, admin, upload.array('images', 5), productCreateRules, validateResult, createProduct);
+router.put('/:id', protect, admin, productUpdateRules, validateResult, updateProduct);
 router.delete('/:id', protect, admin, deleteProduct);
 
 module.exports = router;

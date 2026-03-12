@@ -1,6 +1,8 @@
 const Order = require('../models/Order');
-const { 
-  sendAdminOrderEmail, 
+const Product = require('../models/Product');
+const mongoose = require('mongoose');
+const {
+  sendAdminOrderEmail,
   sendCustomerOrderEmail,
   sendOrderApprovedEmail,
   sendOrderDispatchedEmail,
@@ -10,44 +12,85 @@ const {
 // @route   POST /api/orders
 exports.createOrder = async (req, res) => {
   try {
-    const {
-      items,
-      shippingAddress,
-      paymentMethod,
-      paymentDetails,
-      itemsPrice,
-      shippingPrice,
-      totalPrice,
-      userEmail
-    } = req.body;
+    const { items, shippingAddress, paymentMethod, paymentDetails, userEmail } = req.body;
 
-    if (!items || items.length === 0) {
-      return res.status(400).json({ message: 'No items in order' });
-    }
+    if (!items || items.length === 0) return res.status(400).json({ message: 'No items in order' });
 
-    const order = await Order.create({
-      user: req.user._id,
-      items,
-      shippingAddress,
-      paymentMethod,
-      paymentDetails,
-      itemsPrice,
-      shippingPrice,
-      totalPrice,
-      userEmail: userEmail || req.user.email
-    });
-
-    // Send email notifications
+    // Start DB transaction to protect stock and order creation
+    const session = await mongoose.startSession();
+    session.startTransaction();
     try {
-      await sendAdminOrderEmail(order);
-      if (order.userEmail) {
-        await sendCustomerOrderEmail(order);
-      }
-    } catch (emailError) {
-      console.log('Email error:', emailError.message);
-    }
+      let itemsPrice = 0;
+      const orderItems = [];
 
-    res.status(201).json(order);
+      // For each item, lookup product from DB and verify stock and price
+      for (const it of items) {
+        const pid = it.product;
+        const qty = Number(it.quantity) || 0;
+        if (!mongoose.Types.ObjectId.isValid(pid) || qty < 1) {
+          throw new Error('Invalid item in cart');
+        }
+
+        const prod = await Product.findById(pid).session(session);
+        if (!prod) throw new Error('Product not found: ' + pid);
+
+        // Check stock atomically by reducing stock via conditional update
+        const updated = await Product.findOneAndUpdate(
+          { _id: pid, stock: { $gte: qty } },
+          { $inc: { stock: -qty } },
+          { session, new: true }
+        );
+        if (!updated) {
+          throw new Error(`Insufficient stock for product: ${prod.name}`);
+        }
+
+        const linePrice = prod.price * qty;
+        itemsPrice += linePrice;
+        orderItems.push({ product: prod._id, name: prod.name, price: prod.price, quantity: qty });
+      }
+
+      // Calculate shipping and tax on server-side
+      const shippingPrice = itemsPrice > 5000 ? 0 : 250;
+      const taxRate = Number(process.env.TAX_RATE) || 0;
+      const tax = +(itemsPrice * taxRate).toFixed(2);
+      const totalPrice = +(itemsPrice + shippingPrice + tax).toFixed(2);
+
+      const orderDoc = {
+        user: req.user ? req.user._id : null, // null for guest orders
+        items: orderItems,
+        shippingAddress,
+        paymentMethod,
+        paymentDetails,
+        itemsPrice,
+        shippingPrice,
+        totalPrice,
+        userEmail: userEmail || (req.user ? req.user.email : null)
+      };
+
+      // Create order within transaction
+      const created = await Order.create([orderDoc], { session });
+
+      await session.commitTransaction();
+      session.endSession();
+
+      const order = created[0];
+
+      // Send email notifications
+      try {
+        await sendAdminOrderEmail(order);
+        if (order.userEmail) {
+          await sendCustomerOrderEmail(order);
+        }
+      } catch (emailError) {
+        console.log('Email error:', emailError.message);
+      }
+      res.status(201).json(order);
+      return;
+    } catch (txError) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: txError.message });
+    }
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -76,7 +119,11 @@ exports.getOrderById = async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    if (order.user._id.toString() !== req.user._id.toString() && !req.user.isAdmin) {
+    // Allow admin OR the owning user OR guest (no user on order) to view
+    const isOwner = req.user && order.user && order.user._id && order.user._id.toString() === req.user._id.toString();
+    const isAdmin = req.user && req.user.isAdmin;
+    const isGuest = !order.user; // guest order with no user attached
+    if (!isOwner && !isAdmin && !isGuest) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 

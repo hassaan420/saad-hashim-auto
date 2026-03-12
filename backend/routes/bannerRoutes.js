@@ -23,8 +23,10 @@ router.get('/all', protect, admin, async (req, res) => {
   }
 });
 
+const { bannerCreateRules, bannerUpdateRules, validateResult } = require('../middleware/validators');
+
 // POST create banner (admin)
-router.post('/', protect, admin, async (req, res) => {
+router.post('/', protect, admin, bannerCreateRules, validateResult, async (req, res) => {
   try {
     const banner = await Banner.create(req.body);
     res.status(201).json(banner);
@@ -34,7 +36,7 @@ router.post('/', protect, admin, async (req, res) => {
 });
 
 // PUT update banner (admin)
-router.put('/:id', protect, admin, async (req, res) => {
+router.put('/:id', protect, admin, bannerUpdateRules, validateResult, async (req, res) => {
   try {
     const banner = await Banner.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!banner) return res.status(404).json({ message: 'Banner not found' });

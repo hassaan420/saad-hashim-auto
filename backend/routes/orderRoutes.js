@@ -1,4 +1,4 @@
- const express = require('express');
+const express = require('express');
 const router = express.Router();
 const {
   createOrder,
@@ -7,15 +7,15 @@ const {
   getAllOrders,
   updateOrderStatus
 } = require('../controllers/orderController');
-const { protect, admin } = require('../middleware/authMiddleware');
+const { protect, optionalAuth, admin } = require('../middleware/authMiddleware');
 
 // User routes
-router.post('/', protect, createOrder);
+const { orderCreateRules, orderStatusRules, validateResult } = require('../middleware/validators');
+router.post('/', optionalAuth, orderCreateRules, validateResult, createOrder); // guests allowed
 router.get('/myorders', protect, getMyOrders);
-router.get('/:id', protect, getOrderById);
-router.get('/', protect, admin, getAllOrders);
+router.get('/:id', optionalAuth, getOrderById);
 // Admin routes
 router.get('/', protect, admin, getAllOrders);
-router.put('/:id/status', protect, admin, updateOrderStatus);
+router.put('/:id/status', protect, admin, orderStatusRules, validateResult, updateOrderStatus);
 
 module.exports = router;

@@ -1,9 +1,10 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 
-// Generate JWT Token
+// Generate JWT Token (short expiry; refresh strategy recommended)
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  const expiresIn = process.env.JWT_EXPIRY || '1h';
+  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn });
 };
 
 // @route   POST /api/auth/register
@@ -87,6 +88,16 @@ exports.updateProfile = async (req, res) => {
 
     const updated = await user.save();
     res.json({ name: updated.name, email: updated.email, phone: updated.phone });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @route   GET /api/auth/users (Admin only)
+exports.getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find({}).select('-password').sort({ createdAt: -1 });
+    res.json(users);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

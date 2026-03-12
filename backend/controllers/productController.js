@@ -45,13 +45,13 @@ exports.createProduct = async (req, res) => {
     } = req.body;
 
     const product = await Product.create({
-      name,
-      description,
-      price,
+      name: String(name).trim(),
+      description: String(description).trim(),
+      price: Number(price),
       category,
-      brand,
-      compatibleWith,
-      stock,
+      brand: String(brand).trim(),
+      compatibleWith: Array.isArray(compatibleWith) ? compatibleWith : (compatibleWith ? [compatibleWith] : []),
+      stock: Number(stock) || 0,
       images: req.files ? req.files.map(f => f.path) : []
     });
 
@@ -64,9 +64,15 @@ exports.createProduct = async (req, res) => {
 // @route   PUT /api/products/:id (Admin only)
 exports.updateProduct = async (req, res) => {
   try {
+    const update = { ...req.body };
+    if (update.price !== undefined) update.price = Number(update.price);
+    if (update.stock !== undefined) update.stock = Number(update.stock);
+    if (update.name) update.name = String(update.name).trim();
+    if (update.brand) update.brand = String(update.brand).trim();
+
     const product = await Product.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      update,
       { new: true }
     );
     if (!product) {
