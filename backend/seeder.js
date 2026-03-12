@@ -4,7 +4,6 @@
  */
 
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
 const dns = require('dns');
 const dotenv = require('dotenv');
 dotenv.config();
@@ -21,19 +20,17 @@ async function seed() {
 
     const existing = await User.findOne({ email });
     if (existing) {
-        // If already exists, ensure isAdmin flag is set
+        // Reset password as plain text — pre-save hook will hash it once
+        existing.password = plainPassword;
         existing.isAdmin = true;
         await existing.save();
-        console.log('✅ Existing user updated to admin:', email);
+        console.log('✅ Existing user password reset and isAdmin set:', email);
     } else {
-        // Hash password using bcrypt (same rounds as User model)
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(plainPassword, salt);
-
+        // Pass plain password — the User pre-save hook will hash it
         await User.create({
             name: 'Admin',
             email,
-            password: hashedPassword,
+            password: plainPassword,
             phone: '03000000000',
             isAdmin: true,
         });
